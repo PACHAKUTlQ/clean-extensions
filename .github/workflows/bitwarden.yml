@@ -108,6 +108,7 @@ jobs:
           ARTIFACT: ${{ steps.artifact.outputs.path }}
         run: |
           gh release create "$TAG_NAME" "$ARTIFACT" \
+            --repo ${{ github.repository }} \
             --title "Bitwarden $TAG_NAME (Patched)" \
             --notes "Automated build from tag $TAG_NAME. Includes offline premium patch." \
             --target ${{ github.sha }} \
