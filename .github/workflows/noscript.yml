@@ -1,0 +1,91 @@
+name: Build NoScript
+
+on:
+  schedule:
+    # Run every 4 days at midnight
+    - cron: "0 0 */4 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (Minimal)
+        uses: actions/checkout@v4
+
+      - name: Scrape Upstream Version
+        id: upstream
+        run: |
+          HTML=$(curl -sL https://noscript.net/getit/)
+
+          # Look for the href inside the specific context of the RC for Chromium
+          DOWNLOAD_URL=$(echo "$HTML" | grep -oP 'https://secure\.informaction\.com/download/betas/noscript-[0-9\.]+-chrome\.zip' | head -n 1)
+
+          if [ -z "$DOWNLOAD_URL" ]; then
+            echo "Error: Could not find download URL."
+            exit 1
+          fi
+
+          # Extract version from URL (e.g., 13.5.11.903)
+          VERSION=$(echo "$DOWNLOAD_URL" | grep -oP '(?<=noscript-)[0-9\.]+(?=-chrome\.zip)')
+
+          echo "Found Upstream Version: $VERSION"
+          echo "Download URL: $DOWNLOAD_URL"
+
+          # Set outputs for next steps
+          echo "url=$DOWNLOAD_URL" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag_name=noscript-v$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Check Existing Release
+        id: check_release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ steps.upstream.outputs.tag_name }}
+        run: |
+          # Check if release exists using gh cli
+          if gh release view "$TAG_NAME" > /dev/null 2>&1; then
+            echo "Release $TAG_NAME already exists."
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Release $TAG_NAME does not exist. Proceeding to build."
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Download and Prepare
+        if: steps.check_release.outputs.exists == 'false'
+        run: |
+          mkdir -p build_work
+          cd build_work
+
+          # Download
+          curl -L -o original.zip "${{ steps.upstream.outputs.url }}"
+
+          unzip -q original.zip -d unpacked
+
+          # -------------------------------------------------------
+          # RESERVED PATCHING SECTION
+          # -------------------------------------------------------
+
+          # Repack
+          cd unpacked
+          zip -r -q ../noscript-${{ steps.upstream.outputs.version }}.zip .
+          cd ..
+
+          echo "artifact_path=build_work/noscript-${{ steps.upstream.outputs.version }}.zip" >> $GITHUB_ENV
+
+      - name: Create Release
+        if: steps.check_release.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ steps.upstream.outputs.tag_name }}
+          VERSION: ${{ steps.upstream.outputs.version }}
+          ARTIFACT: ${{ env.artifact_path }}
+        run: |
+          gh release create "$TAG_NAME" "$ARTIFACT" \
+            --title "NoScript $VERSION" \
+            --notes "Automated build from ${{ steps.upstream.outputs.url }}" \
+            --latest
