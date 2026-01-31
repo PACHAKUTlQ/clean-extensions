@@ -14,8 +14,6 @@ jobs:
     steps:
       - name: Checkout Repo (for patches)
         uses: actions/checkout@v4
-        with:
-          path: extensions
 
       - name: Find Latest Browser Version
         id: upstream
@@ -67,7 +65,7 @@ jobs:
           echo "Applying Patch..."
           cd clients
 
-          patch -p1 < ../extensions/extensions/bitwarden/patches/premium.patch
+          patch -p1 < ../extensions/bitwarden/patches/premium.patch
 
           echo "Patch applied successfully."
 
