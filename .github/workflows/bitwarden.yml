@@ -112,4 +112,5 @@ jobs:
           gh release create "$TAG_NAME" "$ARTIFACT" \
             --title "Bitwarden $TAG_NAME (Patched)" \
             --notes "Automated build from tag $TAG_NAME. Includes offline premium patch." \
+            --target ${{ github.sha }} \
             --latest
