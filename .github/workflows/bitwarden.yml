@@ -1,0 +1,115 @@
+name: Build Bitwarden
+
+on:
+  schedule:
+    - cron: "0 0 */4 * *" # Every 4 days
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo (for patches)
+        uses: actions/checkout@v4
+        with:
+          path: extensions
+
+      - name: Find Latest Browser Version
+        id: upstream
+        run: |
+          JSON=$(curl -s "https://api.github.com/repos/bitwarden/clients/releases")
+
+          # Select the first tag name that starts with 'browser-'
+          TAG_NAME=$(echo "$JSON" | jq -r '[.[] | select(.tag_name | startswith("browser-"))] | .[0].tag_name')
+
+          if [ "$TAG_NAME" == "null" ] || [ -z "$TAG_NAME" ]; then
+            echo "Error: Could not find a browser release tag."
+            exit 1
+          fi
+
+          echo "Found Upstream Tag: $TAG_NAME"
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+
+      - name: Check Existing Release
+        id: check_release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ steps.upstream.outputs.tag_name }}
+        run: |
+          # Check if already released this version
+          if gh release view "$TAG_NAME" --repo ${{ github.repository }} > /dev/null 2>&1; then
+            echo "Release $TAG_NAME already exists."
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Release $TAG_NAME does not exist. Proceeding to build."
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup Node.js
+        if: steps.check_release.outputs.exists == 'false'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Download and Patch Source
+        if: steps.check_release.outputs.exists == 'false'
+        env:
+          TAG_NAME: ${{ steps.upstream.outputs.tag_name }}
+        run: |
+          curl -L -o source.zip "https://github.com/bitwarden/clients/archive/refs/tags/${TAG_NAME}.zip"
+          unzip -q source.zip
+
+          mv clients-* clients
+
+          echo "Applying Patch..."
+          cd clients
+
+          patch -p1 < ../extensions/extensions/bitwarden/patches/premium.patch
+
+          echo "Patch applied successfully."
+
+      - name: Install Dependencies
+        if: steps.check_release.outputs.exists == 'false'
+        run: |
+          cd clients
+          echo "Installing dependencies (this may take a while)..."
+          npm ci
+
+      - name: Build Extension
+        if: steps.check_release.outputs.exists == 'false'
+        run: |
+          cd clients/apps/browser
+
+          echo "Building Chrome Distribution..."
+          # dist:chrome runs the production build and zips it
+          npm run dist:chrome
+
+          if [ -f "dist/dist-chrome.zip" ]; then
+             echo "Build successful."
+          else
+             echo "Error: Build artifact not found."
+             exit 1
+          fi
+
+      - name: Prepare Artifact
+        if: steps.check_release.outputs.exists == 'false'
+        id: artifact
+        run: |
+          TAG_NAME="${{ steps.upstream.outputs.tag_name }}"
+          mv clients/apps/browser/dist/dist-chrome.zip "bitwarden-${TAG_NAME}.zip"
+          echo "path=bitwarden-${TAG_NAME}.zip" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        if: steps.check_release.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ steps.upstream.outputs.tag_name }}
+          ARTIFACT: ${{ steps.artifact.outputs.path }}
+        run: |
+          gh release create "$TAG_NAME" "$ARTIFACT" \
+            --title "Bitwarden $TAG_NAME (Patched)" \
+            --notes "Automated build from tag $TAG_NAME. Includes offline premium patch." \
+            --latest
