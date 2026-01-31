@@ -50,7 +50,7 @@ jobs:
         if: steps.check_release.outputs.exists == 'false'
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: latest
 
       - name: Download and Patch Source
         if: steps.check_release.outputs.exists == 'false'
