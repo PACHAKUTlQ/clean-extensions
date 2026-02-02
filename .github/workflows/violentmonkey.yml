@@ -66,6 +66,7 @@ jobs:
           echo "Removing git-dependent scripts..."
 
           npm pkg delete scripts.prepare
+          npm pkg delete scripts.prebuild
 
       - name: Install Dependencies
         if: steps.check_release.outputs.exists == 'false'
