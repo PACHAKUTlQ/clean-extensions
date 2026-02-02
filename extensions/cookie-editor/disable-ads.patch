@@ -1,0 +1,11 @@
+--- interface/lib/optionsHandler.js	2026-02-08 19:20:00.611435747 +0800
++++ interface/lib/optionsHandler.js	2026-02-08 19:21:06.003634437 +0800
+@@ -244,7 +244,7 @@
+   getAdsEnabled() {
+     // Uses `!==` false in order to be opt-in by default, since it was added at
+     // a later time.
+-    return this.options.adsEnabled !== false;
++    return false;
+   }
+   /**
+    * Sets whether the ads are enabled or not.
