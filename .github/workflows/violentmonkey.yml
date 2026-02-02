@@ -1,0 +1,105 @@
+name: Build Violentmonkey
+
+on:
+  schedule:
+    - cron: "0 0 */4 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (Minimal)
+        uses: actions/checkout@v6
+
+      - name: Find Latest Upstream Version
+        id: upstream
+        run: |
+          JSON=$(curl -s "https://api.github.com/repos/violentmonkey/violentmonkey/releases/latest")
+
+          TAG_NAME=$(echo "$JSON" | jq -r .tag_name)
+
+          if [ "$TAG_NAME" == "null" ] || [ -z "$TAG_NAME" ]; then
+            echo "Error: Could not find upstream release."
+            exit 1
+          fi
+
+          echo "Found Upstream Version: $TAG_NAME"
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+
+      - name: Check Existing Release
+        id: check_release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ steps.upstream.outputs.tag_name }}
+        run: |
+          if gh release view "$TAG_NAME" --repo ${{ github.repository }} > /dev/null 2>&1; then
+            echo "Release $TAG_NAME already exists."
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Release $TAG_NAME does not exist. Proceeding to build."
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup Node.js
+        if: steps.check_release.outputs.exists == 'false'
+        uses: actions/setup-node@v6
+        with:
+          node-version: latest
+          cache: "yarn"
+
+      - name: Download Source
+        if: steps.check_release.outputs.exists == 'false'
+        env:
+          TAG_NAME: ${{ steps.upstream.outputs.tag_name }}
+        run: |
+          curl -L -o source.zip "https://github.com/violentmonkey/violentmonkey/archive/refs/tags/${TAG_NAME}.zip"
+          unzip -q source.zip
+          mv violentmonkey-* violentmonkey
+
+      - name: Install Dependencies
+        if: steps.check_release.outputs.exists == 'false'
+        run: |
+          cd violentmonkey
+          yarn install
+
+      - name: Build Extension
+        if: steps.check_release.outputs.exists == 'false'
+        run: |
+          cd violentmonkey
+          echo "Building..."
+          yarn build
+
+      - name: Prepare Artifact
+        if: steps.check_release.outputs.exists == 'false'
+        id: artifact
+        run: |
+          TAG_NAME="${{ steps.upstream.outputs.tag_name }}"
+
+          ZIP_PATH=$(find violentmonkey/dist -name "*.zip" | head -n 1)
+          echo "${ZIP_PATH} found."
+
+          if [ -f "$ZIP_PATH" ]; then
+             mv "$ZIP_PATH" "violentmonkey-${TAG_NAME}.zip"
+             echo "path=violentmonkey-${TAG_NAME}.zip" >> $GITHUB_OUTPUT
+          else
+             echo "Error: Build artifact not found in dist/."
+             ls -R violentmonkey/dist
+             exit 1
+          fi
+
+      - name: Create Release
+        if: steps.check_release.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ steps.upstream.outputs.tag_name }}
+          ARTIFACT: ${{ steps.artifact.outputs.path }}
+        run: |
+          gh release create "$TAG_NAME" "$ARTIFACT" \
+            --repo ${{ github.repository }} \
+            --title "Violentmonkey $TAG_NAME" \
+            --notes "Automated build from upstream tag $TAG_NAME." \
+            --latest
