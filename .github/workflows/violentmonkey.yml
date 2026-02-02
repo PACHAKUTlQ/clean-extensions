@@ -49,7 +49,6 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: latest
-          cache: "yarn"
 
       - name: Download Source
         if: steps.check_release.outputs.exists == 'false'
