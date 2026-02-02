@@ -1,0 +1,124 @@
+name: Build Cookie-Editor
+
+on:
+  schedule:
+    - cron: "0 0 */4 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo (for patches)
+        uses: actions/checkout@v6
+
+      - name: Get Latest Upstream Commit
+        id: upstream
+        run: |
+          JSON=$(curl -s "https://api.github.com/repos/Moustachauve/cookie-editor/commits/master")
+
+          SHA=$(echo "$JSON" | jq -r .sha)
+          SHORT_SHA=${SHA:0:7}
+
+          if [ -z "$SHA" ] || [ "$SHA" == "null" ]; then
+            echo "Error: Could not fetch upstream commit."
+            exit 1
+          fi
+
+          echo "Latest Commit: $SHA"
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+
+      - name: Download Source
+        run: |
+          curl -L -o source.zip "https://github.com/Moustachauve/cookie-editor/archive/${{ steps.upstream.outputs.sha }}.zip"
+          unzip -q source.zip
+          mv cookie-editor-* cookie-editor
+
+      - name: Determine Release Tag
+        id: tag
+        run: |
+          cd cookie-editor
+          VERSION=$(jq -r .version package.json)
+
+          # Construct unique tag: v1.12.0-a1b2c3d
+          TAG_NAME="cookie-editor-v${VERSION}-${{ steps.upstream.outputs.short_sha }}"
+
+          echo "Calculated Tag: $TAG_NAME"
+          echo "name=$TAG_NAME" >> $GITHUB_OUTPUT
+
+      - name: Check Existing Release
+        id: check_release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ steps.tag.outputs.name }}
+        run: |
+          if gh release view "$TAG_NAME" --repo ${{ github.repository }} > /dev/null 2>&1; then
+            echo "Release $TAG_NAME already exists."
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Release $TAG_NAME does not exist. Proceeding to build."
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup Node.js
+        if: steps.check_release.outputs.exists == 'false'
+        uses: actions/setup-node@v6
+        with:
+          node-version: latest
+
+      - name: Apply Patch
+        if: steps.check_release.outputs.exists == 'false'
+        run: |
+          cd cookie-editor
+          echo "Applying disable-ads patch..."
+          patch -p1 < ../extensions/cookie-editor/disable-ads.patch
+
+      - name: Install Dependencies
+        if: steps.check_release.outputs.exists == 'false'
+        run: |
+          cd cookie-editor
+          npm ci
+
+      - name: Build Extension
+        if: steps.check_release.outputs.exists == 'false'
+        run: |
+          cd cookie-editor
+          npx grunt
+
+      - name: Prepare Artifact
+        if: steps.check_release.outputs.exists == 'false'
+        id: artifact
+        run: |
+          TAG_NAME="${{ steps.tag.outputs.name }}"
+
+          # Grunt outputs to dist/<version>/...
+          # The file naming convention in Gruntfile is: Cookie-Editor-chrome-<version>.zip
+
+          ZIP_PATH=$(find cookie-editor/dist -name "*chrome*.zip" | head -n 1)
+
+          if [ -f "$ZIP_PATH" ]; then
+             mv "$ZIP_PATH" "$TAG_NAME.zip"
+             echo "path=$TAG_NAME.zip" >> $GITHUB_OUTPUT
+          else
+             echo "Error: Chrome build artifact not found in dist/."
+             find cookie-editor/dist
+             exit 1
+          fi
+
+      - name: Create Release
+        if: steps.check_release.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ steps.tag.outputs.name }}
+          ARTIFACT: ${{ steps.artifact.outputs.path }}
+          SHA: ${{ steps.upstream.outputs.sha }}
+        run: |
+          gh release create "$TAG_NAME" "$ARTIFACT" \
+            --repo ${{ github.repository }} \
+            --title "Cookie-Editor $TAG_NAME" \
+            --notes "Automated build from commit $SHA (master)." \
+            --latest
