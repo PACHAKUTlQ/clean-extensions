@@ -101,12 +101,12 @@ jobs:
           ZIP_PATH=$(find cookie-editor/dist -name "*chrome*.zip" | head -n 1)
 
           if [ -f "$ZIP_PATH" ]; then
-             mv "$ZIP_PATH" "$TAG_NAME.zip"
-             echo "path=$TAG_NAME.zip" >> $GITHUB_OUTPUT
+            mv "$ZIP_PATH" "$TAG_NAME.zip"
+            echo "path=$TAG_NAME.zip" >> $GITHUB_OUTPUT
           else
-             echo "Error: Chrome build artifact not found in dist/."
-             find cookie-editor/dist
-             exit 1
+            echo "Error: Chrome build artifact not found in dist/."
+            find cookie-editor/dist
+            exit 1
           fi
 
       - name: Create Release

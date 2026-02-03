@@ -86,10 +86,10 @@ jobs:
           npm run dist:chrome
 
           if [ -f "dist/dist-chrome.zip" ]; then
-             echo "Build successful."
+            echo "Build successful."
           else
-             echo "Error: Build artifact not found."
-             exit 1
+            echo "Error: Build artifact not found."
+            exit 1
           fi
 
       - name: Prepare Artifact

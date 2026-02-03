@@ -87,11 +87,11 @@ jobs:
           # We check if it exists and rename it to include version
 
           if [ -f "zeroomega/dist/chromium-release.zip" ]; then
-             mv zeroomega/dist/chromium-release.zip "zeroomega-${TAG_NAME}.zip"
-             echo "path=zeroomega-${TAG_NAME}.zip" >> $GITHUB_OUTPUT
+            mv zeroomega/dist/chromium-release.zip "zeroomega-${TAG_NAME}.zip"
+            echo "path=zeroomega-${TAG_NAME}.zip" >> $GITHUB_OUTPUT
           else
-             echo "Error: Build artifact chromium-release.zip not found."
-             exit 1
+            echo "Error: Build artifact chromium-release.zip not found."
+            exit 1
           fi
 
       - name: Create Release

@@ -91,12 +91,12 @@ jobs:
           echo "${ZIP_PATH} found."
 
           if [ -f "$ZIP_PATH" ]; then
-             mv "$ZIP_PATH" "violentmonkey-${TAG_NAME}.zip"
-             echo "path=violentmonkey-${TAG_NAME}.zip" >> $GITHUB_OUTPUT
+            mv "$ZIP_PATH" "violentmonkey-${TAG_NAME}.zip"
+            echo "path=violentmonkey-${TAG_NAME}.zip" >> $GITHUB_OUTPUT
           else
-             echo "Error: Build artifact not found in dist/."
-             ls -R violentmonkey/dist
-             exit 1
+            echo "Error: Build artifact not found in dist/."
+            ls -R violentmonkey/dist
+            exit 1
           fi
 
       - name: Create Release
