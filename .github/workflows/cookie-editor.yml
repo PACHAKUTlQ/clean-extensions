@@ -75,7 +75,7 @@ jobs:
         run: |
           cd cookie-editor
           echo "Applying disable-ads patch..."
-          patch -p1 < ../extensions/cookie-editor/disable-ads.patch
+          patch -p1 -l < ../extensions/cookie-editor/disable-ads.patch
 
       - name: Install Dependencies
         if: steps.check_release.outputs.exists == 'false'

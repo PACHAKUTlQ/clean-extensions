@@ -65,7 +65,7 @@ jobs:
           echo "Applying Patch..."
           cd clients
 
-          patch -p1 < ../extensions/bitwarden/premium.patch
+          patch -p1 -l < ../extensions/bitwarden/premium.patch
 
           echo "Patch applied successfully."
 
