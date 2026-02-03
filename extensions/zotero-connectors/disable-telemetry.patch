@@ -1,0 +1,13 @@
+diff --git a/src/common/zotero.js b/src/common/zotero.js
+index 59aac35..b64a95c 100644
+--- a/src/common/zotero.js
++++ b/src/common/zotero.js
+@@ -346,7 +346,7 @@ Zotero.Prefs = new function() {
+        "allowedInterceptHosts": [],
+        "firstUse": true,
+        "firstSaveToServer": true,
+-       "reportTranslationFailure": true,
++       "reportTranslationFailure": false,
+        "translatorMetadata": [],
+
+        "proxies.transparent": true,
