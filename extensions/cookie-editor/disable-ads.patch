@@ -1,6 +1,8 @@
+diff --git a/interface/lib/optionsHandler.js b/interface/lib/optionsHandler.js
+index 0e8327b..3a7aa8e 100644
 --- a/interface/lib/optionsHandler.js
 +++ b/interface/lib/optionsHandler.js
-@@ -244,7 +244,7 @@
+@@ -244,7 +244,7 @@ export class OptionsHandler extends EventEmitter {
    getAdsEnabled() {
      // Uses `!==` false in order to be opt-in by default, since it was added at
      // a later time.
