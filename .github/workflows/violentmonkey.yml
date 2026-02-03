@@ -88,9 +88,9 @@ jobs:
           TAG_NAME="${{ steps.upstream.outputs.tag_name }}"
 
           ZIP_PATH=$(find violentmonkey/dist -name "*.zip" | head -n 1)
-          echo "${ZIP_PATH} found."
 
           if [ -f "$ZIP_PATH" ]; then
+            echo "Zip path ${ZIP_PATH} found."
             mv "$ZIP_PATH" "violentmonkey-${TAG_NAME}.zip"
             echo "path=violentmonkey-${TAG_NAME}.zip" >> $GITHUB_OUTPUT
           else
