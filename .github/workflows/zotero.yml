@@ -65,7 +65,7 @@ jobs:
         run: |
           cd zotero-connectors
           echo "Applying disable-telemetry patch..."
-          patch -p1 < ../extensions/zotero-connectors/disable-telemetry.patch
+          patch -p1 -l < ../extensions/zotero-connectors/disable-telemetry.patch
 
       - name: Install Dependencies
         if: steps.check_release.outputs.exists == 'false'
