@@ -1,13 +1,13 @@
-diff --git a/webextension/scripts/settings.js b/webextension/scripts/settings.js
-index 8066819..dc84bd3 100644
---- a/webextension/scripts/settings.js
-+++ b/webextension/scripts/settings.js
-@@ -26,7 +26,7 @@ function restoreSettings(items) {
-   $('#chk-screenshot').prop('checked', items.spn_screenshot)
-   $('#chk-outlinks').prop('checked', items.spn_outlinks)
-   // first panel
--  $('#private-mode-setting').prop('checked', items.private_mode_setting)
-+  $('#private-mode-setting').prop('checked', items.private_mode_setting !== false)
-   $('#not-found-setting').prop('checked', items.not_found_setting)
-   $('#wm-count-setting').prop('checked', items.wm_count_setting)
-   $('#fact-check-setting').prop('checked', items.fact_check_setting)
+diff --git a/webextension/scripts/utils.js b/webextension/scripts/utils.js
+index faa711f..24f5b17 100644
+--- a/webextension/scripts/utils.js
++++ b/webextension/scripts/utils.js
+@@ -840,7 +840,7 @@ function initDefaultOptions () {
+ function afterAcceptTerms () {
+   chrome.storage.local.set({
+     agreement: true,
+-    private_mode_setting: false,
++    private_mode_setting: true,
+     not_found_setting: true
+   })
+   chrome.action.setPopup({ popup: chrome.runtime.getURL('index.html') }, checkLastError)
