@@ -1,0 +1,124 @@
+name: Build Wayback Machine
+
+on:
+  schedule:
+    - cron: "0 0 */4 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo (for patches)
+        uses: actions/checkout@v6
+
+      - name: Get Latest Upstream Commit
+        id: upstream
+        run: |
+          JSON=$(curl -s "https://api.github.com/repos/internetarchive/wayback-machine-webextension/commits/master")
+
+          SHA=$(echo "$JSON" | jq -r .sha)
+          SHORT_SHA=${SHA:0:7}
+
+          if [ -z "$SHA" ] || [ "$SHA" == "null" ]; then
+            echo "Error: Could not fetch upstream commit."
+            exit 1
+          fi
+
+          echo "Latest Commit: $SHA"
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+
+      - name: Download Source
+        run: |
+          curl -L -o source.zip "https://github.com/internetarchive/wayback-machine-webextension/archive/${{ steps.upstream.outputs.sha }}.zip"
+          unzip -q source.zip
+          mv wayback-machine-webextension-* wayback-machine
+
+      - name: Determine Release Tag
+        id: tag
+        run: |
+          cd wayback-machine
+          VERSION=$(jq -r .version package.json)
+
+          # Construct tag: wayback-machine-v3.0.0-a1b2c3d
+          TAG_NAME="wayback-machine-v${VERSION}-${{ steps.upstream.outputs.short_sha }}"
+
+          echo "Calculated Tag: $TAG_NAME"
+          echo "name=$TAG_NAME" >> $GITHUB_OUTPUT
+
+      - name: Check Existing Release
+        id: check_release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ steps.tag.outputs.name }}
+        run: |
+          if gh release view "$TAG_NAME" --repo ${{ github.repository }} > /dev/null 2>&1; then
+            echo "Release $TAG_NAME already exists."
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Release $TAG_NAME does not exist. Proceeding to build."
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup Node.js
+        if: steps.check_release.outputs.exists == 'false'
+        uses: actions/setup-node@v6
+        with:
+          node-version: latest
+
+      - name: Apply Patch
+        if: steps.check_release.outputs.exists == 'false'
+        run: |
+          cd wayback-machine
+          echo "Applying Private Mode patch..."
+          patch -p1 -l < ../extensions/wayback-machine/enable-private-mode.patch
+
+      - name: Install Dependencies
+        if: steps.check_release.outputs.exists == 'false'
+        run: |
+          cd wayback-machine
+          npm ci
+
+      - name: Build Extension
+        if: steps.check_release.outputs.exists == 'false'
+        run: |
+          cd wayback-machine
+          # Runs webpack, outputting to ./webextension/
+          npm run build
+
+      - name: Prepare Artifact
+        if: steps.check_release.outputs.exists == 'false'
+        id: artifact
+        run: |
+          TAG_NAME="${{ steps.tag.outputs.name }}"
+
+          cd wayback-machine/webextension
+
+          if [ ! -f "manifest.json" ]; then
+            echo "Error: manifest.json not found in webextension folder."
+            exit 1
+          fi
+
+          echo "Zipping artifact..."
+          zip -r -q ../../wayback-machine-${TAG_NAME}.zip .
+
+          cd ../..
+          echo "path=wayback-machine-${TAG_NAME}.zip" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        if: steps.check_release.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ steps.tag.outputs.name }}
+          ARTIFACT: ${{ steps.artifact.outputs.path }}
+          SHA: ${{ steps.upstream.outputs.sha }}
+        run: |
+          gh release create "$TAG_NAME" "$ARTIFACT" \
+            --repo ${{ github.repository }} \
+            --title "Wayback Machine $TAG_NAME" \
+            --notes "Automated build from commit $SHA (master)." \
+            --latest
