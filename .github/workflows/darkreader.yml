@@ -58,6 +58,7 @@ jobs:
           curl -L -o source.zip "https://github.com/darkreader/darkreader/archive/refs/tags/${TAG_NAME}.zip"
           unzip -q source.zip
           mv darkreader-* darkreader
+          cd darkreader
 
           echo "Applying hide-birthday patch..."
           patch -p1 -l < ../extensions/darkreader/hide-birthday.patch
