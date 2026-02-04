@@ -101,19 +101,18 @@ jobs:
         run: |
           TAG_NAME="${{ steps.tag.outputs.name }}"
 
-          # The build output is in packages/react-devtools-extensions/chrome/build
-          cd react/packages/react-devtools-extensions/chrome/build
+          cd react/packages/react-devtools-extensions/chrome/build/unpacked
 
           if [ ! -f "manifest.json" ]; then
             ls -la
-            echo "Error: manifest.json not found in build output."
+            echo "Error: manifest.json not found in chrome/build/unpacked."
             exit 1
           fi
 
           echo "Zipping extension..."
-          zip -r -q ../../../../../${TAG_NAME}.zip .
+          zip -r -q ../../../../../../${TAG_NAME}.zip .
 
-          cd ../../../../..
+          cd ../../../../../..
           echo "path=${TAG_NAME}.zip" >> $GITHUB_OUTPUT
 
       - name: Create Release
