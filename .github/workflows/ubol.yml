@@ -84,12 +84,12 @@ jobs:
           ZIP_PATH="ubol-home/uBlock/dist/build/uBOLite_${TAG_NAME}.chromium.zip"
 
           if [ -f "$ZIP_PATH" ]; then
-             mv "$ZIP_PATH" "uBOLite-${TAG_NAME}.zip"
-             echo "path=uBOLite-${TAG_NAME}.zip" >> $GITHUB_OUTPUT
+            mv "$ZIP_PATH" "uBOLite-${TAG_NAME}.zip"
+            echo "path=uBOLite-${TAG_NAME}.zip" >> $GITHUB_OUTPUT
           else
-             echo "Error: Build artifact not found at $ZIP_PATH"
-             ls -R ubol-home/uBlock/dist/build/
-             exit 1
+            echo "Error: Build artifact not found at $ZIP_PATH"
+            ls -R ubol-home/uBlock/dist/build/
+            exit 1
           fi
 
       - name: Create Release
