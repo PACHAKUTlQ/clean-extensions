@@ -1,0 +1,13 @@
+diff --git a/webextension/scripts/settings.js b/webextension/scripts/settings.js
+index 8066819..dc84bd3 100644
+--- a/webextension/scripts/settings.js
++++ b/webextension/scripts/settings.js
+@@ -26,7 +26,7 @@ function restoreSettings(items) {
+   $('#chk-screenshot').prop('checked', items.spn_screenshot)
+   $('#chk-outlinks').prop('checked', items.spn_outlinks)
+   // first panel
+-  $('#private-mode-setting').prop('checked', items.private_mode_setting)
++  $('#private-mode-setting').prop('checked', items.private_mode_setting !== false)
+   $('#not-found-setting').prop('checked', items.not_found_setting)
+   $('#wm-count-setting').prop('checked', items.wm_count_setting)
+   $('#fact-check-setting').prop('checked', items.fact_check_setting)
