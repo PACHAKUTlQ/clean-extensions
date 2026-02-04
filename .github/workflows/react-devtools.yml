@@ -105,6 +105,7 @@ jobs:
           cd react/packages/react-devtools-extensions/chrome/build
 
           if [ ! -f "manifest.json" ]; then
+            ls -la
             echo "Error: manifest.json not found in build output."
             exit 1
           fi
