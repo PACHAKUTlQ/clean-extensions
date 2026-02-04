@@ -1,0 +1,21 @@
+diff --git a/src/background/extension.ts b/src/background/extension.ts
+index e3beeeab..d5b67340 100644
+--- a/src/background/extension.ts
++++ b/src/background/extension.ts
+@@ -255,6 +255,16 @@ export class Extension {
+         Extension.onAppToggle();
+         logInfo('loaded', UserStorage.settings);
+ 
++        logInfo('loaded', UserStorage.settings);
++        // Show UI as activated (feature not available)
++        (async () => {
++            const stored = await chrome.storage.local.get(['activationEmail', 'activationKey']);
++            if (!stored.activationEmail || !stored.activationKey) {
++                await writeLocalStorage({activationEmail: 'activated@local', activationKey: 'local-activation-key'});
++                await UIHighlights.hideHighlights(['anniversary']);
++            }
++        })();
++
+         if (__THUNDERBIRD__) {
+             TabManager.registerMailDisplayScript();
+         } else if (!__CHROMIUM_MV3__ || Extension.isFirstLoad) {
