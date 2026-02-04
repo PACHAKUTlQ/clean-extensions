@@ -1,0 +1,130 @@
+name: Build React DevTools
+
+on:
+  schedule:
+    - cron: "0 0 */7 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  check-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (Minimal)
+        uses: actions/checkout@v6
+
+      - name: Get Latest DevTools Commit
+        id: upstream
+        run: |
+          # Fetch the latest commit specifically for the extensions folder
+          # This prevents rebuilding when unrelated parts of React change
+          JSON=$(curl -s "https://api.github.com/repos/facebook/react/commits?path=packages/react-devtools-extensions&per_page=1")
+
+          # The API returns an array, take the first item
+          SHA=$(echo "$JSON" | jq -r '.[0].sha')
+          SHORT_SHA=${SHA:0:7}
+
+          if [ -z "$SHA" ] || [ "$SHA" == "null" ]; then
+            echo "Error: Could not fetch upstream commit."
+            exit 1
+          fi
+
+          echo "Latest DevTools Commit: $SHA"
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+
+      - name: Determine Release Tag
+        id: tag
+        env:
+          SHORT_SHA: ${{ steps.upstream.outputs.short_sha }}
+        run: |
+          # The package.json version is 0.0.0, so we use the commit SHA in the tag
+          TAG_NAME="react-devtools-${SHORT_SHA}"
+
+          echo "Calculated Tag: $TAG_NAME"
+          echo "name=$TAG_NAME" >> $GITHUB_OUTPUT
+
+      - name: Check Existing Release
+        id: check_release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ steps.tag.outputs.name }}
+        run: |
+          if gh release view "$TAG_NAME" --repo ${{ github.repository }} > /dev/null 2>&1; then
+            echo "Release $TAG_NAME already exists."
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Release $TAG_NAME does not exist. Proceeding to build."
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup Node.js
+        if: steps.check_release.outputs.exists == 'false'
+        uses: actions/setup-node@v6
+        with:
+          node-version: latest
+
+      - name: Download Source
+        if: steps.check_release.outputs.exists == 'false'
+        run: |
+          # Download the full repo at the specific commit
+          curl -L -o source.zip "https://github.com/facebook/react/archive/${{ steps.upstream.outputs.sha }}.zip"
+          unzip -q source.zip
+          mv react-* react
+
+      - name: Install Dependencies
+        if: steps.check_release.outputs.exists == 'false'
+        run: |
+          cd react
+          # --frozen-lockfile ensures we use the exact versions from yarn.lock
+          yarn install --frozen-lockfile
+
+      - name: Build Core Dependencies
+        if: steps.check_release.outputs.exists == 'false'
+        run: |
+          cd react
+          echo "Building React dependencies for DevTools..."
+          yarn build-for-devtools
+
+      - name: Build Extension
+        if: steps.check_release.outputs.exists == 'false'
+        run: |
+          cd react/packages/react-devtools-extensions
+          echo "Building Chrome Extension..."
+          yarn build:chrome
+
+      - name: Prepare Artifact
+        if: steps.check_release.outputs.exists == 'false'
+        id: artifact
+        run: |
+          TAG_NAME="${{ steps.tag.outputs.name }}"
+
+          # The build output is in packages/react-devtools-extensions/chrome/build
+          cd react/packages/react-devtools-extensions/chrome/build
+
+          if [ ! -f "manifest.json" ]; then
+            echo "Error: manifest.json not found in build output."
+            exit 1
+          fi
+
+          echo "Zipping extension..."
+          zip -r -q ../../../../../${TAG_NAME}.zip .
+
+          cd ../../../../..
+          echo "path=${TAG_NAME}.zip" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        if: steps.check_release.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ steps.tag.outputs.name }}
+          ARTIFACT: ${{ steps.artifact.outputs.path }}
+          SHA: ${{ steps.upstream.outputs.sha }}
+        run: |
+          gh release create "$TAG_NAME" "$ARTIFACT" \
+            --repo ${{ github.repository }} \
+            --title "React DevTools $TAG_NAME" \
+            --notes "Automated build from commit $SHA (packages/react-devtools-extensions)." \
+            --latest
