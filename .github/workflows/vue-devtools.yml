@@ -85,18 +85,27 @@ jobs:
         run: |
           TAG_NAME="${{ steps.upstream.outputs.tag_name }}"
 
-          cd vue-devtools/packages/chrome-extension/dist
+          cd vue-devtools/packages/chrome-extension
 
           if [ ! -f "manifest.json" ]; then
-            echo "Error: Build failed, manifest.json not found."
-            ls -R
+            echo "Error: Build failed, manifest.json not found in packages/chrome-extension."
+            ls -la
             exit 1
           fi
 
           echo "Zipping extension..."
-          zip -r -q ../../../../vue-devtools-${TAG_NAME}.zip .
+          FILES="manifest.json package.json devtools-background.html devtools-panel.html dist icons client overlay pages popups"
+          TO_ZIP=""
 
-          cd ../../../..
+          for file in $FILES; do
+            if [ -e "$file" ]; then
+              TO_ZIP="$TO_ZIP $file"
+            fi
+          done
+
+          zip -r -q ../../../vue-devtools-${TAG_NAME}.zip $TO_ZIP
+
+          cd ../../..
           echo "path=vue-devtools-${TAG_NAME}.zip" >> $GITHUB_OUTPUT
 
       - name: Create Release
