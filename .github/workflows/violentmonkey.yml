@@ -44,12 +44,6 @@ jobs:
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Setup Node.js
-        if: steps.check_release.outputs.exists == 'false'
-        uses: actions/setup-node@v6
-        with:
-          node-version: latest
-
       - name: Download Source
         if: steps.check_release.outputs.exists == 'false'
         env:
@@ -59,27 +53,38 @@ jobs:
           unzip -q source.zip
           mv violentmonkey-* violentmonkey
 
-      - name: Patch package.json
+      - name: Setup pnpm
+        if: steps.check_release.outputs.exists == 'false'
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: violentmonkey/package.json
+
+      - name: Setup Node.js
+        if: steps.check_release.outputs.exists == 'false'
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: violentmonkey/package.json
+          cache: pnpm
+          cache-dependency-path: violentmonkey/pnpm-lock.yaml
+
+      - name: Prepare
         if: steps.check_release.outputs.exists == 'false'
         run: |
           cd violentmonkey
-          echo "Removing git-dependent scripts..."
+          pnpm i --frozen-lockfile
+          node scripts/action-helper.js
 
-          npm pkg delete scripts.prepare
-          npm pkg delete scripts.prebuild
-
-      - name: Install Dependencies
+      - name: Test
         if: steps.check_release.outputs.exists == 'false'
         run: |
           cd violentmonkey
-          yarn install
+          pnpm run ci
 
       - name: Build Extension
         if: steps.check_release.outputs.exists == 'false'
         run: |
           cd violentmonkey
-          echo "Building..."
-          yarn build
+          pnpm build
 
       - name: Prepare Artifact
         if: steps.check_release.outputs.exists == 'false'
