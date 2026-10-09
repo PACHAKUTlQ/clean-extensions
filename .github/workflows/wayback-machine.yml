@@ -35,7 +35,7 @@ jobs:
           echo "revision=$revision"
         } >> "$GITHUB_OUTPUT"
       build: |
-        patch --batch --forward --fuzz=0 -p1 -l \
+        patch --batch --forward --fuzz=2 -p1 -l \
           < "$GITHUB_WORKSPACE/extensions/wayback-machine/enable-private-mode.patch"
 
         npm ci
