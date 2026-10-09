@@ -1,0 +1,321 @@
+name: Build Extension
+
+on:
+  workflow_call:
+    inputs:
+      extension:
+        required: true
+        type: string
+      title:
+        required: true
+        type: string
+      repository:
+        default: ""
+        type: string
+      biweekly:
+        default: false
+        type: boolean
+      node-version:
+        default: latest
+        type: string
+      submodules:
+        default: false
+        type: boolean
+      archive-root:
+        default: false
+        type: boolean
+      tag-prefix:
+        default: v
+        type: string
+      resolve:
+        required: true
+        type: string
+      build:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-extension-${{ inputs.extension }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  resolve:
+    name: Resolve Source
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      build: ${{ steps.release.outputs.build }}
+      version: ${{ steps.upstream.outputs.version }}
+      revision: ${{ steps.upstream.outputs.revision }}
+      upstream_tag: ${{ steps.upstream.outputs.upstream_tag }}
+      download_url: ${{ steps.upstream.outputs.download_url }}
+      release_tag: ${{ steps.release.outputs.tag }}
+      source_url: ${{ steps.release.outputs.source_url }}
+    steps:
+      - name: Check Schedule
+        id: schedule
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BIWEEKLY: ${{ inputs.biweekly }}
+        run: |
+          enabled=true
+
+          if [[ "$EVENT_NAME" == schedule && "$BIWEEKLY" == true ]]; then
+            week=$((($(date -u +%s) / 86400 + 3) / 7))
+            if ((week % 2 != 0)); then
+              enabled=false
+            fi
+          fi
+
+          echo "enabled=$enabled" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve Upstream Source
+        if: steps.schedule.outputs.enabled == 'true'
+        id: upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_REPOSITORY: ${{ inputs.repository }}
+        run: ${{ inputs.resolve }}
+
+      - name: Check Existing Release
+        if: steps.schedule.outputs.enabled == 'true'
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXTENSION: ${{ inputs.extension }}
+          TAG_PREFIX: ${{ inputs.tag-prefix }}
+          VERSION: ${{ steps.upstream.outputs.version }}
+          REVISION: ${{ steps.upstream.outputs.revision }}
+          DOWNLOAD_URL: ${{ steps.upstream.outputs.download_url }}
+          UPSTREAM_REPOSITORY: ${{ inputs.repository }}
+        run: |
+          [[ "$EXTENSION" =~ ^[a-z0-9][a-z0-9-]*$ ]]
+          [[ "$TAG_PREFIX" =~ ^[A-Za-z0-9._-]*$ ]]
+          [[ "$VERSION" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]*$ ]]
+
+          if [[ -n "$UPSTREAM_REPOSITORY" ]]; then
+            [[ "$UPSTREAM_REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]
+          fi
+
+          if [[ -n "$REVISION" ]]; then
+            [[ "$REVISION" =~ ^[0-9a-f]{40}$ ]]
+            [[ -n "$UPSTREAM_REPOSITORY" ]]
+          fi
+
+          if [[ -n "$DOWNLOAD_URL" ]]; then
+            [[ "$DOWNLOAD_URL" == https://* ]]
+            source_url="$DOWNLOAD_URL"
+          else
+            [[ -n "$REVISION" ]]
+            source_url="https://github.com/$UPSTREAM_REPOSITORY/tree/$REVISION"
+          fi
+
+          tag="$EXTENSION-$TAG_PREFIX$VERSION"
+          encoded_tag=$(jq -rn --arg tag "$tag" '$tag | @uri')
+          response=$(mktemp)
+
+          if ! status=$(curl --silent --show-error --location \
+            --retry 3 --connect-timeout 15 --max-time 60 \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header "Accept: application/vnd.github+json" \
+            --output "$response" \
+            --write-out '%{http_code}' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$encoded_tag"); then
+            cat "$response" >&2
+            rm -f "$response"
+            exit 1
+          fi
+
+          case "$status" in
+            200)
+              echo "Release $tag already exists."
+              build=false
+              ;;
+            404)
+              echo "Building release $tag."
+              build=true
+              ;;
+            *)
+              echo "Error: Release lookup returned HTTP $status." >&2
+              cat "$response" >&2
+              rm -f "$response"
+              exit 1
+              ;;
+          esac
+
+          rm -f "$response"
+
+          {
+            echo "tag=$tag"
+            echo "source_url=$source_url"
+            echo "build=$build"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build Extension
+    needs: resolve
+    if: needs.resolve.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout Build Configuration
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Checkout Upstream Source
+        if: needs.resolve.outputs.download_url == ''
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ inputs.repository }}
+          ref: ${{ needs.resolve.outputs.revision }}
+          path: source
+          submodules: ${{ inputs.submodules }}
+          persist-credentials: false
+
+      - name: Download Upstream Source
+        if: needs.resolve.outputs.download_url != ''
+        env:
+          DOWNLOAD_URL: ${{ needs.resolve.outputs.download_url }}
+          ARCHIVE_ROOT: ${{ inputs.archive-root }}
+        run: |
+          curl --fail --silent --show-error --location \
+            --retry 3 --connect-timeout 15 --max-time 300 \
+            --output "$RUNNER_TEMP/source.zip" \
+            "$DOWNLOAD_URL"
+
+          if [[ "$ARCHIVE_ROOT" == true ]]; then
+            unpacked=$(mktemp -d "$RUNNER_TEMP/source-XXXXXX")
+            unzip -q "$RUNNER_TEMP/source.zip" -d "$unpacked"
+
+            mapfile -d '' -t entries < <(
+              find "$unpacked" -mindepth 1 -maxdepth 1 -print0
+            )
+
+            [[ "${#entries[@]}" == 1 && -d "${entries[0]}" ]]
+            mv "${entries[0]}" "$GITHUB_WORKSPACE/source"
+          else
+            mkdir -p "$GITHUB_WORKSPACE/source"
+            unzip -q "$RUNNER_TEMP/source.zip" \
+              -d "$GITHUB_WORKSPACE/source"
+          fi
+
+      - name: Setup Node.js
+        if: inputs.node-version != ''
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: Build Extension
+        id: extension
+        working-directory: source
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+          UPSTREAM_TAG: ${{ needs.resolve.outputs.upstream_tag }}
+          UPSTREAM_REVISION: ${{ needs.resolve.outputs.revision }}
+        run: ${{ inputs.build }}
+
+      - name: Package and Validate Extension
+        env:
+          BUILD_PATH: ${{ steps.extension.outputs.path }}
+          RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
+        run: |
+          [[ -n "$BUILD_PATH" && "$BUILD_PATH" == /* ]]
+
+          mkdir -p artifacts
+          artifact="$GITHUB_WORKSPACE/artifacts/$RELEASE_TAG.zip"
+
+          if [[ -d "$BUILD_PATH" ]]; then
+            [[ -f "$BUILD_PATH/manifest.json" ]]
+            (
+              cd "$BUILD_PATH"
+              zip -r -q "$artifact" .
+            )
+          elif [[ -f "$BUILD_PATH" ]]; then
+            cp "$BUILD_PATH" "$artifact"
+          else
+            echo "Error: Build output does not exist: $BUILD_PATH" >&2
+            exit 1
+          fi
+
+          [[ -s "$artifact" ]]
+          unzip -tq "$artifact"
+
+          unzip -p "$artifact" manifest.json |
+            jq -e '
+              type == "object" and
+              (.name | type == "string") and
+              (.version | type == "string") and
+              (.manifest_version == 2 or .manifest_version == 3)
+            ' > /dev/null
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ needs.resolve.outputs.release_tag }}
+          path: artifacts/*.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish Release
+    needs:
+      - resolve
+      - build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download Build Artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.resolve.outputs.release_tag }}
+          path: artifacts
+
+      - name: Publish Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.resolve.outputs.release_tag }}
+          TITLE: ${{ inputs.title }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          SOURCE_URL: ${{ needs.resolve.outputs.source_url }}
+          REVISION: ${{ needs.resolve.outputs.revision }}
+          UPSTREAM_TAG: ${{ needs.resolve.outputs.upstream_tag }}
+        run: |
+          cd artifacts
+          artifact="$RELEASE_TAG.zip"
+          [[ -s "$artifact" ]]
+          sha256sum "$artifact" > SHA256SUMS
+
+          {
+            printf 'Upstream source: %s\n' "$SOURCE_URL"
+
+            if [[ -n "$UPSTREAM_TAG" ]]; then
+              printf '\nUpstream tag: %s\n' "$UPSTREAM_TAG"
+            fi
+
+            if [[ -n "$REVISION" ]]; then
+              printf '\nUpstream commit: %s\n' "$REVISION"
+            fi
+
+            printf '\nBuild configuration: %s/%s/tree/%s\n' \
+              "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_SHA"
+
+            printf '\nBuild workflow: %s/%s/actions/runs/%s\n' \
+              "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
+          } > release-notes.md
+
+          gh release create "$RELEASE_TAG" "$artifact" SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "$TITLE $VERSION" \
+            --notes-file release-notes.md \
+            --latest=false
