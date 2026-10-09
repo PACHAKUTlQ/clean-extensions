@@ -16,6 +16,7 @@ jobs:
       extension: violentmonkey
       title: Violentmonkey
       repository: violentmonkey/violentmonkey
+      node-version: "26"
       resolve: |
         tag=$(gh api \
           "repos/$UPSTREAM_REPOSITORY/releases/latest" \
@@ -33,10 +34,35 @@ jobs:
           echo "upstream_tag=$tag"
         } >> "$GITHUB_OUTPUT"
       build: |
-        npm pkg delete scripts.prepare
-        npm pkg delete scripts.prebuild
+        node --input-type=module <<'JS'
+        import { readFileSync, writeFileSync } from "node:fs";
 
-        yarn install --frozen-lockfile
-        yarn build
+        const path = "package.json";
+        const manifest = JSON.parse(readFileSync(path, "utf8"));
+        const manager = manifest.packageManager;
 
-        echo "path=$PWD/dist" >> "$GITHUB_OUTPUT"
+        if (typeof manager !== "string") {
+          throw new Error("Missing packageManager declaration.");
+        }
+
+        if (manager.startsWith("yarn@pnpm@")) {
+          manifest.packageManager = manager.slice("yarn@".length);
+          writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`);
+        }
+
+        if (!manifest.packageManager.startsWith("pnpm@")) {
+          throw new Error(`Expected pnpm, found ${manifest.packageManager}.`);
+        }
+
+        if (!manifest.scripts?.["build:mv3"]) {
+          throw new Error("Missing build:mv3 script.");
+        }
+        JS
+
+        npm install --global corepack
+        corepack enable
+
+        HUSKY=0 pnpm install --frozen-lockfile
+        pnpm run build:mv3
+
+        echo "path=$PWD/dist-mv3" >> "$GITHUB_OUTPUT"
