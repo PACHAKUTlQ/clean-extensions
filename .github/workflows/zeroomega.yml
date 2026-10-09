@@ -40,5 +40,11 @@ jobs:
         npm run build
         npm run release
 
-        echo "path=$GITHUB_WORKSPACE/source/dist/chromium-release.zip" \
-          >> "$GITHUB_OUTPUT"
+        directory="$GITHUB_WORKSPACE/source/omega-target-chromium-extension/tmp/chromium"
+
+        if [[ ! -f "$directory/manifest.json" ]]; then
+          echo "Error: Chromium staging directory is missing manifest.json." >&2
+          exit 1
+        fi
+
+        echo "path=$directory" >> "$GITHUB_OUTPUT"
