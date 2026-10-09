@@ -34,7 +34,7 @@ jobs:
           echo "upstream_tag=$tag"
         } >> "$GITHUB_OUTPUT"
       build: |
-        patch --batch --forward --fuzz=0 -p1 -l \
+        patch --batch --forward --fuzz=2 -p1 -l \
           < "$GITHUB_WORKSPACE/extensions/zotero-connectors/disable-telemetry.patch"
 
         npm ci
