@@ -15,7 +15,7 @@ jobs:
     with:
       extension: react-devtools
       title: React DevTools
-      repository: facebook/react
+      repository: react/react
       biweekly: true
       archive-root: true
       tag-prefix: ""
