@@ -35,6 +35,24 @@ jobs:
         } >> "$GITHUB_OUTPUT"
       build: |
         cd uBlock
+        git submodule update --init --recursive
+
+        codemirror="platform/mv3/extension/lib/codemirror/codemirror-ubol"
+
+        (
+          cd "$codemirror"
+
+          npm install
+          npm run build
+        )
+
+        bundle="$codemirror/dist/cm6.bundle.ubol.min.js"
+
+        if [[ ! -s "$bundle" ]]; then
+          echo "Error: CodeMirror build did not produce $bundle." >&2
+          exit 1
+        fi
+
         bash tools/make-mv3.sh chromium "$UPSTREAM_TAG"
 
         echo "path=$PWD/dist/build/uBOLite_$UPSTREAM_TAG.chromium.zip" \
